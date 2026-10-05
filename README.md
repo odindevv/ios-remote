@@ -23,9 +23,10 @@
 
 1. Plug in the iPhone and unlock it.
 2. Double-click `START.bat`.
-3. On the **Phones** page, press **▶ Start** on the phone and wait until it says **ready**.
-4. Click the phone to control it.
-5. To finish, press **Stop** or close the black window.
+3. Open **http://127.0.0.1:5000** in the browser (it opens by itself after a few seconds).
+4. On the **Phones** page, press **▶ Start** on the phone and wait until it says **ready**.
+5. Click the phone to control it.
+6. To finish, press **Stop** or close the black window.
 
 ## Every 7 days (free Apple ID)
 
