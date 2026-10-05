@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+websockets>=12
+httpx>=0.27
+tidevice>=0.12      # video directo por USB
+pymobiledevice3     # lanza WDA (más confiable que tidevice en iOS 16+)
+# sólo para tests/fake_wda.py:
+# pillow

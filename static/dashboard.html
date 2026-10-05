@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phones · iOS Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #141821; --panel2: #1b2030; --line: #262c3a; --text: #e6e8ee;
+    --muted: #7f879b; --accent: #7c6cff; --ok: #3ccf8e; --bad: #ff5d6c; --warn: #f5b84b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 Inter, system-ui, sans-serif; }
+  body { padding: 28px 32px 40px; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; margin: 0 auto 24px; max-width: 1400px; }
+  h1 { font: 700 26px "Space Grotesk", sans-serif; letter-spacing: -.02em; margin: 0; }
+  .sub { color: var(--muted); margin-top: 4px; }
+  .sub b { color: var(--text); font-weight: 500; }
+  .tools { display: flex; gap: 8px; align-items: center; }
+  .chip { font: 500 11px "IBM Plex Mono", monospace; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; color: var(--muted); }
+  .btn { font: 500 12px Inter, sans-serif; color: var(--text); background: var(--panel); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; }
+  .btn:hover { border-color: var(--accent); }
+
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px;
+    max-width: 1400px; margin: 0 auto; }
+
+  .card { position: relative; display: flex; flex-direction: column; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 18px; padding: 14px; color: inherit;
+    text-decoration: none; transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .card:hover { transform: translateY(-3px); border-color: var(--accent);
+    box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+  .card.off { opacity: .75; }
+  .card.waiting { cursor: default; } .card.waiting:hover { transform: none; border-color: var(--line); box-shadow: none; }
+  .pill.warn { color: var(--warn); } .pill:not(.ok):not(.bad):not(.warn) { color: var(--muted); }
+  .start { font: 600 15px Inter, sans-serif; color: #fff; background: var(--accent); border: 0; cursor: pointer;
+    border-radius: 12px; padding: 12px 22px; box-shadow: 0 6px 20px rgba(124,108,255,.35); }
+  .start:hover { filter: brightness(1.12); } .start:disabled { opacity: .6; cursor: default; }
+  .stop { margin-left: auto; font: 500 10.5px "IBM Plex Mono", monospace; color: var(--muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+  .stop:hover { color: var(--bad); border-color: var(--bad); }
+  .card.offline .ph { display: grid; justify-items: center; gap: 6px; }
+  .card.offline .ph small { font: 400 10.5px Inter, sans-serif; color: var(--muted); opacity: .8; }
+  .card.offline .ph svg { opacity: .6; margin-bottom: 4px; }
+  .card.waiting .ph { font-size: 12px; line-height: 1.5; padding: 20px; }
+
+  .shot { position: relative; aspect-ratio: 375 / 812; border-radius: 20px; overflow: hidden;
+    background: #000; border: 1px solid var(--line); display: grid; place-items: center; }
+  .shot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    transition: opacity .3s; }
+  .shot .ph { color: var(--muted); font: 500 11px "IBM Plex Mono", monospace; text-align: center; padding: 12px; }
+  .shot .live { position: absolute; top: 10px; left: 10px; z-index: 1; font: 600 9px "IBM Plex Mono", monospace;
+    letter-spacing: .08em; background: rgba(124,108,255,.9); color: #fff; padding: 3px 7px; border-radius: 5px; }
+  .card:hover .open { opacity: 1; transform: none; }
+  .open { position: absolute; inset: auto 12px 12px 12px; z-index: 1; text-align: center; padding: 9px;
+    border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; opacity: 0;
+    transform: translateY(6px); transition: opacity .15s, transform .15s; }
+
+  .meta { padding: 12px 2px 0; }
+  .row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .name { font: 600 15px Inter, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { flex: none; font: 500 10px "IBM Plex Mono", monospace; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid currentColor; }
+  .pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); }
+  .udid { font: 400 10px "IBM Plex Mono", monospace; color: var(--muted); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .facts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .fact { font: 500 10.5px "IBM Plex Mono", monospace; color: var(--text); background: var(--panel2);
+    border-radius: 6px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 5px; }
+  .fact.dim { color: var(--muted); }
+  .bat { width: 18px; height: 9px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; }
+  .bat::after { content: ""; position: absolute; right: -4px; top: 2px; width: 2px; height: 3px; background: currentColor; border-radius: 0 1px 1px 0; }
+  .bat i { position: absolute; left: 1px; top: 1px; bottom: 1px; border-radius: 1px; background: currentColor; }
+
+  .empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 80px 20px; }
+  .empty b { display: block; color: var(--text); font-size: 15px; margin-bottom: 6px; }
+  .empty code { font: 11px "IBM Plex Mono", monospace; color: var(--text); }
+  .skel { aspect-ratio: 375 / 1000; border-radius: 18px; background: linear-gradient(90deg,
+    var(--panel) 25%, var(--panel2) 50%, var(--panel) 75%); background-size: 200% 100%;
+    animation: shine 1.2s infinite; }
+  @keyframes shine { to { background-position: -200% 0; } }
+
+  @media (max-width: 600px) { body { padding: 18px 16px 30px; } #grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Phones</h1>
+    <div class="sub" id="summary">Looking for phones…</div>
+  </div>
+  <div class="tools">
+    <span class="chip" id="updated">—</span>
+    <button class="btn" id="refresh">Refresh</button>
+  </div>
+</header>
+
+<div id="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+let devices = [], waiting = [];
+
+function batteryFact(d) {
+  if (d.battery == null) return '';
+  const color = d.battery <= 20 && !d.charging ? 'var(--bad)' : d.battery <= 40 ? 'var(--warn)' : 'var(--ok)';
+  return `<span class="fact" style="color:${color}" title="Battery${d.charging ? ' (charging)' : ''}">
+    <span class="bat"><i style="width:${Math.max(6, d.battery) * 0.13}px"></i></span>${d.battery}%${d.charging ? ' ⚡' : ''}</span>`;
+}
+
+function card(d) {
+  const href = `/control?dev=${encodeURIComponent(d.id)}`;
+  return `
+  <a class="card ${d.wda ? '' : 'off'}" href="${href}" data-id="${esc(d.id)}">
+    <div class="shot">
+      ${d.viewers ? '<span class="live">IN USE</span>' : ''}
+      <div class="ph">${d.wda ? 'Loading screen…' : d.starting ? 'Starting WebDriverAgent…<br>this takes 20–40 s' : 'WDA not responding'}</div>
+      ${d.wda ? `<img alt="" data-src="/api/${encodeURIComponent(d.id)}/thumb" style="opacity:0">` : ''}
+      <div class="open">Control →</div>
+    </div>
+    <div class="meta">
+      <div class="row1">
+        <span class="name">${esc(d.name)}</span>
+        <span class="pill ${d.wda ? 'ok' : d.starting ? 'warn' : 'bad'}">${d.wda ? 'ready' : d.starting ? 'starting' : 'down'}</span>
+      </div>
+      <div class="udid" title="${esc(d.udid)}">${esc(d.udid || 'no udid configured')}</div>
+      <div class="facts">
+        ${d.usb === false ? '<span class="fact" style="color:var(--bad)">unplugged</span>' : ''}
+        ${d.ios ? `<span class="fact">iOS ${esc(d.ios)}</span>` : ''}
+        ${batteryFact(d)}
+        ${d.viewers ? `<span class="fact">${d.viewers} watching · ${d.fps} fps</span>` : '<span class="fact dim">free</span>'}
+        ${d.auto ? `<button class="stop" data-stop="${esc(d.id)}" title="Turn WebDriverAgent off on this phone">Stop</button>` : ''}
+      </div>
+    </div>
+  </a>`;
+}
+
+// iPhones enchufados que todavía no se pueden usar (sin WDA, bloqueados…): tarjeta gris con el motivo.
+// "hace 5 min", "hace 2 h", "hace 3 d"
+function ago(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
+}
+function waitCard(w) {
+  if (w.offline) return `
+  <div class="card waiting off offline" title="${esc(w.udid)}">
+    <div class="shot"><div class="ph">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/><path d="M3 3l18 18"/></svg>
+      <div>Not connected</div><small>Plug it in by USB and unlock it</small></div></div>
+    <div class="meta">
+      <div class="row1"><span class="name">${esc(w.name || 'iPhone')}</span><span class="pill">offline</span></div>
+      <div class="udid">${esc(w.udid)}</div>
+      <div class="facts">${w.ios ? `<span class="fact">iOS ${esc(w.ios)}</span>` : ''}
+        ${w.last_seen ? `<span class="fact dim">seen ${ago(w.last_seen)}</span>` : ''}
+        <button class="stop" data-forget="${esc(w.udid)}" title="Remove this phone from the list">Forget</button></div>
+    </div>
+  </div>`;
+  return `
+  <div class="card waiting ${w.startable ? '' : 'off'}" title="${esc(w.udid)}">
+    <div class="shot">${w.startable
+        ? `<button class="start" data-start="${esc(w.udid)}">▶ Start</button>`
+        : `<div class="ph">${esc(w.status || 'Checking…')}</div>`}</div>
+    <div class="meta">
+      <div class="row1"><span class="name">${esc(w.name || 'iPhone')}</span>${w.startable
+        ? '<span class="pill">off</span>' : '<span class="pill bad">not ready</span>'}</div>
+      <div class="udid">${esc(w.udid)}</div>
+      <div class="facts">${w.ios ? `<span class="fact">iOS ${esc(w.ios)}</span>` : ''}<span class="fact dim">connected by USB</span></div>
+    </div>
+  </div>`;
+}
+
+// Miniaturas: se cargan de a una por teléfono y se reemplazan sin parpadeo.
+function loadThumb(img) {
+  const next = new Image();
+  next.onload = () => { img.src = next.src; img.style.opacity = 1; img.previousElementSibling?.classList?.contains('ph') && (img.previousElementSibling.style.display = 'none'); };
+  next.onerror = () => {};
+  next.src = `${img.dataset.src}?t=${Date.now()}`;
+}
+function refreshThumbs() { if (!document.hidden) document.querySelectorAll('.shot img').forEach(loadThumb); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/devices');
+    if (r.status === 401) { $('#grid').innerHTML = '<div class="empty"><b>Missing token</b>Open the page with <code>?token=…</code></div>'; return; }
+    devices = await r.json();
+    waiting = await (await fetch('/api/detected')).json().catch(() => []);
+  } catch {
+    $('#summary').textContent = "Can't reach the server.";
+    return;
+  }
+  const online = devices.filter(d => d.wda).length;
+  $('#summary').innerHTML = devices.length || waiting.length
+    ? `<b>${online}</b> of <b>${devices.length + waiting.filter(w => !w.offline).length}</b> ready`
+      + (waiting.some(w => w.offline) ? ` · ${waiting.filter(w => w.offline).length} offline` : '')
+      + ' · press <b>Start</b> to turn a phone on, then click it to control it'
+    : 'Looking for iPhones on USB…';
+  $('#updated').textContent = new Date().toLocaleTimeString('en-US');
+
+  // Re-dibuja sólo si cambió algo de la info (así las miniaturas no parpadean).
+  const html = devices.length || waiting.length ? devices.map(card).join('') + waiting.map(waitCard).join('')
+    : '<div class="empty"><b>No iPhones found</b>Plug an iPhone in by USB and unlock it — it will appear here by itself.</div>';
+  const sig = JSON.stringify([devices.map(d => [d.id, d.wda, d.ios, d.battery, d.charging, d.viewers, Math.round(d.fps), d.usb, d.starting]),
+                              waiting.map(w => [w.udid, w.status, w.offline, ago(w.last_seen)])]);
+  if (sig !== $('#grid').dataset.sig) {
+    const old = {};
+    document.querySelectorAll('.shot img').forEach(i => { if (i.src) old[i.dataset.src] = i.src; });
+    $('#grid').innerHTML = html;
+    $('#grid').dataset.sig = sig;
+    document.querySelectorAll('.shot img').forEach(i => {
+      if (old[i.dataset.src]) { i.src = old[i.dataset.src]; i.style.opacity = 1; i.previousElementSibling.style.display = 'none'; }
+      else loadThumb(i);
+    });
+  }
+}
+
+$('#grid').addEventListener('click', async e => {
+  const start = e.target.closest('[data-start]'), stop = e.target.closest('[data-stop]');
+  const forget = e.target.closest('[data-forget]');
+  if (forget) {
+    e.preventDefault();
+    if (!confirm('Remove this phone from the list? It will come back if you plug it in again.')) return;
+    await fetch(`/api/forget/${encodeURIComponent(forget.dataset.forget)}`, { method: 'POST' });
+    $('#grid').dataset.sig = ''; load(); return;
+  }
+  if (!start && !stop) return;
+  e.preventDefault(); e.stopPropagation();          // el botón Stop está dentro del enlace de la tarjeta
+  const btn = start || stop;
+  btn.disabled = true; btn.textContent = start ? 'Starting…' : 'Stopping…';
+  const url = start ? `/api/start/${encodeURIComponent(start.dataset.start)}` : `/api/stop/${encodeURIComponent(stop.dataset.stop)}`;
+  try {
+    const r = await fetch(url, { method: 'POST' });
+    if (!r.ok) alertBox((await r.json().catch(() => ({}))).detail || `Error ${r.status}`);
+  } catch { alertBox("Can't reach the server."); }
+  $('#grid').dataset.sig = '';                       // forzar redibujo
+  load();
+});
+function alertBox(msg) { $('#summary').innerHTML = `<span style="color:var(--bad)">${esc(msg)}</span>`; }
+
+$('#refresh').onclick = () => { load(); refreshThumbs(); };
+load();
+setInterval(load, 5000);          // estado de cada teléfono
+setInterval(refreshThumbs, 10000); // miniaturas (sólo con la pestaña visible)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshThumbs(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "host": "127.0.0.1",
+  "port": 5000,
+  "token": "",
+  "auto": true,
+  "gestures": {
+    "swipe_max_ms": 220,
+    "swipe_mode": "actions"
+  },
+  "devices": []
+}

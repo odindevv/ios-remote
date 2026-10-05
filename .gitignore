@@ -1,0 +1,7 @@
+__pycache__/
+cache/
+logs/
+_to_delete/
+ios
+config-vigia.json
+config-iphone-propio.json

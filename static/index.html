@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iOS Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #141821; --panel2: #1b2030; --line: #262c3a; --text: #e6e8ee;
+    --muted: #7f879b; --accent: #7c6cff; --ok: #3ccf8e; --bad: #ff5d6c; --warn: #f5b84b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 Inter, system-ui, sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 4px 16px 6px; }
+
+  /* ---- barra superior de estado ---- */
+  #topbar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .chip { font: 500 10px "IBM Plex Mono", monospace; color: var(--text); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
+  .chip.state { color: var(--bad); }
+  .chip.state.ok { color: var(--ok); }
+  .chip.state.warn { color: var(--warn); }
+  .chip .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; margin-right: 6px; vertical-align: 1px; }
+  .chip.dim { color: var(--muted); }
+  a.chip.back { color: var(--text); text-decoration: none; }
+  a.chip.back:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---- escenario: barra izq · pantalla · barra der ---- */
+  #stage { position: relative; display: flex; align-items: center; gap: 14px; min-height: 0; }
+  .bar { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px; }
+  .bar hr { width: 60%; border: 0; border-top: 1px solid var(--line); margin: 4px auto; }
+  .ib { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px;
+    background: transparent; border: 0; color: var(--muted); cursor: pointer; padding: 0; }
+  .ib:hover { background: var(--panel2); color: var(--text); }
+  .ib.on { background: var(--accent); color: #fff; }
+  .ib.alert { color: var(--bad); }
+  .ib:active { transform: scale(.93); }
+  .ib svg { width: 18px; height: 18px; }
+
+  /* Como la referencia: el teléfono ocupa ~92% del alto; sólo quedan la barra de arriba (~20 px)
+     y el Home (~40 px). El ANCHO sale solo de la proporción real del video del teléfono. */
+  #wrap { position: relative; height: calc(100vh - 78px); }
+  /* Marco FIJO con la proporción de la vista "Conectando…" (375×812, la de un iPhone sin botón
+     Home). El video de cada teléfono se dibuja adentro sin deformarse; si su pantalla es más
+     ancha (iPhone 8: 16:9) quedan franjas negras arriba y abajo, como un bisel. */
+  #screen { height: 100%; aspect-ratio: 375 / 812; width: auto; display: block; border-radius: 22px; background: #000;
+    outline: 1px solid var(--line); touch-action: none; cursor: crosshair; }
+  #screen:focus { outline: 2px solid var(--accent); }
+  #overlay { position: absolute; inset: 0; pointer-events: none; }
+  /* Burbuja de toque, como el "mostrar toques" de iOS: aparece al presionar, sigue al dedo
+     y se desvanece al soltar. */
+  .touch { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+    pointer-events: none; z-index: 3; background: rgba(255,255,255,.38);
+    border: 1.5px solid rgba(255,255,255,.75); box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 2px 10px rgba(0,0,0,.25);
+    transform: scale(.55); opacity: 0; transition: transform .1s ease-out, opacity .1s, background .25s; }
+  .touch.on { transform: scale(1); opacity: 1; }
+  .touch.hold { background: rgba(255,255,255,.55); }
+  .touch.off { transform: scale(1.35); opacity: 0; transition: transform .28s ease-out, opacity .28s; }
+  #nosignal { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted);
+    font: 500 12px "IBM Plex Mono", monospace; text-align: center; padding: 20px; }
+
+  /* ---- popovers de la barra izquierda (se abren sobre la pantalla) ---- */
+  .pop { display: none; position: absolute; left: 58px; z-index: 5; width: 260px; padding: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .pop.open { display: block; }
+  .pop h2 { font: 500 10px "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin: 0 0 8px; }
+  .pop select, .pop input, .pop textarea { font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  .pop textarea { resize: vertical; min-height: 70px; }
+  .hint { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
+  kbd { font: 10px "IBM Plex Mono", monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  #log { font: 11px "IBM Plex Mono", monospace; color: var(--muted); white-space: pre-wrap;
+    max-height: 220px; overflow-y: auto; }
+
+  /* ---- fila de abajo: Atrás · swipes · Home ---- */
+  /* 3 columnas: los lados ocupan lo mismo, así el Home queda SIEMPRE en el centro exacto */
+  #navbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+    width: min(100%, 420px); }
+  #navbar .side { display: flex; align-items: center; gap: 8px; }
+  #navbar .side.left { justify-content: flex-end; }
+  #navbar .side.right { justify-content: flex-start; }
+  #navbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  .nb { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+    background: transparent; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+  .nb:hover { color: var(--text); border-color: var(--accent); background: var(--panel); }
+  .nb:active { transform: scale(.92); }
+  .nb svg { width: 15px; height: 15px; }
+  #navbar #home-btn { margin: 0 6px; }
+
+  /* ---- selector de apps (capa sobre la pantalla) ---- */
+  #switcher { position: absolute; inset: 0; z-index: 4; border-radius: 22px; display: flex;
+    flex-direction: column; padding: 18px 14px 14px; background: rgba(10,12,18,.62);
+    backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    opacity: 0; pointer-events: none; transform: scale(1.03); transition: opacity .18s, transform .18s; }
+  #switcher.open { opacity: 1; pointer-events: auto; transform: none; }
+  .sw-head { display: flex; align-items: flex-start; justify-content: space-between; padding: 0 4px 14px; }
+  .sw-title { font: 600 17px Inter, sans-serif; letter-spacing: -.01em; }
+  .sw-sub { font: 400 11px "IBM Plex Mono", monospace; color: var(--muted); margin-top: 2px; }
+  .sw-actions { display: flex; gap: 6px; }
+  .sw-icon { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+    background: rgba(255,255,255,.08); border: 0; color: var(--text); cursor: pointer; }
+  .sw-icon:hover { background: rgba(255,255,255,.16); }
+  .sw-icon svg { width: 15px; height: 15px; }
+  .sw-icon.spin svg { animation: swspin .8s linear infinite; }
+  @keyframes swspin { to { transform: rotate(360deg); } }
+
+  /* minmax(0,1fr): un bundle ID largo no puede ensanchar la columna (eso daba la barra horizontal) */
+  #sw-list { flex: 1; overflow-y: auto; overflow-x: hidden; display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-content: start;
+    padding: 2px 4px 2px 2px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
+  #sw-list::-webkit-scrollbar { width: 6px; }
+  #sw-list::-webkit-scrollbar-track { background: transparent; }
+  #sw-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); border-radius: 3px; }
+  #sw-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.35); }
+  .sw-app { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 18px 8px 12px; border-radius: 18px; cursor: pointer; text-align: center;
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08);
+    transition: transform .15s, background .15s, opacity .2s; }
+  .sw-app:hover { background: rgba(255,255,255,.12); transform: translateY(-2px); }
+  .sw-app:active { transform: scale(.97); }
+  .sw-app.picked { background: rgba(124,108,255,.35); border-color: var(--accent); }
+  .sw-app.gone { opacity: 0; transform: translateY(-24px) scale(.9); pointer-events: none; }
+  .sw-ico { width: 60px; height: 60px; border-radius: 14px; overflow: hidden; flex: none; display: grid;
+    place-items: center; font: 600 24px Inter, sans-serif; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .sw-ico { position: relative; }
+  .sw-ico img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .sw-name { font: 500 13px Inter, sans-serif; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sw-bundle { font: 400 9.5px "IBM Plex Mono", monospace; color: var(--muted); max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: -4px; }
+  .sw-kill { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center; padding: 0; border: 0; cursor: pointer;
+    background: rgba(0,0,0,.35); color: var(--muted); opacity: 0; transition: opacity .15s; }
+  .sw-app:hover .sw-kill { opacity: 1; }
+  .sw-kill:hover { background: var(--bad); color: #fff; }
+  .sw-kill svg { width: 11px; height: 11px; }
+  .sw-skel { height: 128px; border-radius: 18px; background: linear-gradient(90deg,
+    rgba(255,255,255,.05) 25%, rgba(255,255,255,.11) 50%, rgba(255,255,255,.05) 75%);
+    background-size: 200% 100%; animation: swshine 1.2s infinite; }
+  @keyframes swshine { to { background-position: -200% 0; } }
+  .sw-msg { grid-column: 1 / -1; color: var(--muted); text-align: center; padding: 50px 10px; }
+  .sw-msg b { display: block; color: var(--text); font-weight: 500; margin-bottom: 4px; }
+  .sw-msg small { font: 10px "IBM Plex Mono", monospace; word-break: break-word; }
+  .sw-foot { display: flex; justify-content: center; padding-top: 12px; }
+  .sw-pill { font: 500 12px Inter, sans-serif; color: var(--text); background: rgba(255,255,255,.08);
+    border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+  .sw-pill:hover:not(:disabled) { background: var(--bad); }
+  .sw-pill:disabled { opacity: .35; cursor: default; }
+
+  /* ---- barra de teclado: lo que se escribe acá aparece en el teléfono al instante ---- */
+  #kbbar { display: none; align-items: center; gap: 6px; width: min(100%, 420px); }
+  body.kb-open #kbbar { display: flex; }
+  body.kb-open #wrap { height: calc(100vh - 126px); }
+  #kb { flex: 1; min-width: 0; font: 14px Inter, sans-serif; color: var(--text); background: var(--panel);
+    border: 1px solid var(--accent); border-radius: 10px; padding: 9px 12px; outline: none; }
+  #kb::placeholder { color: var(--muted); }
+  .kb-btn { width: 36px; height: 36px; flex: none; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px; }
+  .kb-btn:hover { border-color: var(--accent); }
+
+  /* ---- botón Home ---- */
+  #home-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--line); cursor: pointer; padding: 0; flex: none; }
+  #home-btn { color: var(--muted); }
+  #home-btn svg { width: 19px; height: 19px; }
+  #home-btn:hover { border-color: var(--accent); }
+  #home-btn:hover { color: var(--text); }
+  #home-btn:active { transform: scale(.94); }
+
+  @media (max-width: 600px) {
+    #wrap { height: calc(100vh - 110px); }
+    #stage { gap: 8px; }
+    .ib { width: 30px; height: 30px; }
+  }
+</style>
+</head>
+<body>
+<div id="topbar">
+  <a class="chip back" href="/" title="Back to the phone list">← Phones</a>
+  <span class="chip state" id="chip-state"><span class="dot"></span><span id="state">disconnected</span></span>
+  <span class="chip"><span id="fps">0</span> FPS</span>
+  <span class="chip" title="How long WDA took to run the last command on the phone (not the ping)"><span id="lat-op">last</span> <span id="lat">–</span> ms</span>
+  <span class="chip dim">JPEG</span>
+  <span class="chip dim">WS</span>
+  <span class="chip"><span id="viewers">0</span> watching</span>
+</div>
+
+<div id="stage">
+  <div class="bar" id="leftbar">
+    <button class="ib" id="kb-toggle" title="Keyboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+    <button class="ib" id="fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+    <button class="ib" id="shot" title="Screenshot (PNG)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></svg></button>
+    <button class="ib" data-op="rotate" title="Rotate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+    <hr>
+    <button class="ib" data-pop="pop-app" title="Open app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+    <button class="ib" data-pop="pop-log" title="Log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+    <button class="ib" data-pop="pop-dev" title="Device"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg></button>
+  </div>
+
+  <div class="pop" id="pop-app">
+    <h2>Open app</h2>
+    <input id="bundle" placeholder="com.burbn.instagram" list="bundles">
+    <datalist id="bundles">
+      <option value="com.burbn.instagram"><option value="com.apple.Preferences">
+      <option value="com.apple.mobilesafari"><option value="com.apple.mobileslideshow">
+    </datalist>
+    <p class="hint">Type the bundle ID and press Enter.</p>
+  </div>
+  <div class="pop" id="pop-log">
+    <h2>Log</h2>
+    <div id="log">(no errors)</div>
+  </div>
+  <div class="pop" id="pop-dev">
+    <h2>Device</h2>
+    <select id="dev"></select>
+  </div>
+
+  <div id="wrap">
+    <canvas id="screen" tabindex="0"></canvas>
+    <div id="overlay"></div>
+    <div id="nosignal">Connecting…</div>
+    <div id="switcher" aria-label="Open apps">
+      <div class="sw-head">
+        <div><div class="sw-title">Open apps</div><div class="sw-sub" id="sw-count">&nbsp;</div></div>
+        <div class="sw-actions">
+          <button class="sw-icon" id="sw-refresh" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+          <button class="sw-icon" id="sw-close" title="Close (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+      </div>
+      <div id="sw-list"></div>
+      <div class="sw-foot">
+        <button id="sw-killall" class="sw-pill" disabled>Close all</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar" id="rightbar">
+    <button class="ib" data-op="lock" title="Lock / unlock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></svg></button>
+    <button class="ib" data-op="button" data-name="volumeUp" title="Volume up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg></button>
+    <button class="ib" data-op="button" data-name="volumeDown" title="Volume down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+  </div>
+</div>
+
+<div id="kbbar">
+  <input id="kb" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+         placeholder="Type here">
+  <button class="kb-btn" id="kb-enter" title="Return (Enter)">↵</button>
+  <button class="kb-btn" id="kb-close" title="Close keyboard (Esc)">✕</button>
+</div>
+
+<div id="navbar">
+  <div class="side left">
+    <button class="nb" data-swipe="back" title="Back: swipe from the left edge · Alt+Backspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <span class="sep"></span>
+    <button class="nb" data-swipe="right" title="Previous (finger swipes right) · ← key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+    <button class="nb" data-swipe="down" title="Scroll up (finger swipes down) · ↑ key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+  </div>
+  <button id="home-btn" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg></button>
+  <div class="side right">
+    <button class="nb" data-swipe="up" title="Scroll down (finger swipes up) · ↓ key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></button>
+    <button class="nb" data-swipe="left" title="Next (finger swipes left) · → key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
+    <span class="sep"></span>
+    <button class="nb" id="switcher-btn" title="Open apps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="14" height="14" rx="2"/><path d="M3 7v12a2 2 0 0 0 2 2h12"/></svg></button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const canvas = $('#screen'), ctx = canvas.getContext('2d');
+let ws = null, devId = null, msgId = 0, pending = new Map(), frames = 0, drawing = false;
+
+function logLine(t) {
+  const el = $('#log');
+  const prev = el.textContent === '(no errors)' ? '' : el.textContent;
+  el.textContent = `${new Date().toLocaleTimeString('en-US')} ${t}\n` + prev.slice(0, 4000);
+  if (t.startsWith('✗')) $('[data-pop="pop-log"]').classList.add('alert');  // aviso en el ícono
+}
+function setState(text, cls) {
+  $('#state').textContent = text;
+  $('#chip-state').className = 'chip state ' + (cls || '');
+}
+
+// ---------- conexión ----------
+async function loadDevices() {
+  const r = await fetch('/api/devices');
+  if (r.status === 401) { setState('no token', ''); return; }
+  const list = await r.json();
+  const sel = $('#dev');
+  sel.innerHTML = list.map(d =>
+    `<option value="${esc(d.id)}">${esc(d.name)}${d.wda ? '' : ' (WDA down)'}</option>`).join('');
+  // Qué teléfono abrir: el de la URL (/control?dev=A, viene del inicio) o el último usado.
+  const fromUrl = new URLSearchParams(location.search).get('dev');
+  const saved = (() => { try { return localStorage.getItem('dev'); } catch { return null; } })();
+  const want = [fromUrl, saved].find(id => id && list.some(d => d.id === id));
+  if (want) sel.value = want;
+  document.title = `${list.find(d => d.id === sel.value)?.name || 'iOS Remote'} · iOS Remote`;  // title no interpreta HTML
+  connect(sel.value);
+}
+$('#dev').onchange = e => {
+  try { localStorage.setItem('dev', e.target.value); } catch {}
+  history.replaceState(null, '', `/control?dev=${encodeURIComponent(e.target.value)}`);
+  connect(e.target.value);
+};
+
+function connect(id) {
+  if (ws) { ws.onclose = null; ws.close(); }
+  devId = id;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/${id}`);
+  ws.binaryType = 'blob';
+  setState('connecting…', 'warn');
+  ws.onopen = () => setState('connected', 'ok');
+  ws.onmessage = ev => {
+    if (typeof ev.data !== 'string') return drawFrame(ev.data);
+    const m = JSON.parse(ev.data);
+    const p = pending.get(m.id); pending.delete(m.id);
+    // Nombre corto del comando: así se ve que "home 25 ms" y "toque 874 ms" son cosas distintas.
+    const OPN = { tap: 'tap', hold: 'hold', swipe: 'swipe', keys: 'text', home: 'home', button: 'button',
+                  lock: 'lock', rotate: 'rotate', launch: 'open', activate: 'switch', terminate: 'close' };
+    $('#lat-op').textContent = OPN[p] || p || 'last';
+    $('#lat').textContent = m.ms;
+    if (!m.ok) logLine(`✗ ${p || '?'}: ${m.err}`);
+    else if (p === 'rotate') logLine(`rotated to ${m.res}`);
+  };
+  ws.onclose = () => {
+    setState('reconnecting…', '');
+    $('#nosignal').style.display = 'grid';
+    $('#nosignal').textContent = 'No signal. Retrying…';
+    setTimeout(() => devId === id && connect(id), 2000);
+  };
+}
+
+function send(op, extra = {}) {
+  if (!ws || ws.readyState !== 1) return;
+  const id = ++msgId;
+  pending.set(id, op);
+  ws.send(JSON.stringify({ id, op, ...extra }));
+}
+
+// ---------- video: el frame más nuevo gana ----------
+// Rectángulo (en px del canvas) donde quedó dibujado el video: los toques se miden contra él.
+let fit = null;
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  if (w && h && (canvas.width !== w || canvas.height !== h)) { canvas.width = w; canvas.height = h; }
+}
+new ResizeObserver(sizeCanvas).observe(canvas);
+sizeCanvas();
+
+async function drawFrame(blob) {
+  frames++;
+  if (drawing) return;           // si todavía se está pintando el anterior, se descarta
+  drawing = true;
+  try {
+    const bmp = await createImageBitmap(blob);
+    // "contain": entra entero, centrado, sin deformar
+    const k = Math.min(canvas.width / bmp.width, canvas.height / bmp.height);
+    const w = bmp.width * k, h = bmp.height * k;
+    const x = (canvas.width - w) / 2, y = (canvas.height - h) / 2;
+    if (!fit || fit.x !== x || fit.y !== y || fit.w !== w) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bmp, x, y, w, h);
+    fit = { x, y, w, h };
+    bmp.close();
+    $('#nosignal').style.display = 'none';
+  } catch (e) { /* frame corrupto: se ignora */ }
+  drawing = false;
+}
+setInterval(() => { $('#fps').textContent = frames; frames = 0; }, 1000);
+
+// ---------- gestos ----------
+// Todo se manda como FRACCIÓN (0..1) del ancho/alto: el servidor la pasa a puntos.
+// El original usaba toFixed(2) → 1% de error (≈8 pt en un iPhone X); acá van 4 decimales.
+// Fracción (0..1) DENTRO DEL VIDEO, no del marco: las franjas negras no cuentan.
+const frac = e => {
+  const r = canvas.getBoundingClientRect();
+  const sx = canvas.width / r.width, sy = canvas.height / r.height;   // px de pantalla → px de canvas
+  const f = fit || { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  const fx = ((e.clientX - r.left) * sx - f.x) / f.w, fy = ((e.clientY - r.top) * sy - f.y) / f.h;
+  const c = v => +Math.min(1, Math.max(0, v)).toFixed(4);
+  return [c(fx), c(fy)];
+};
+let path = null, t0 = 0, touchEl = null, holdTimer = null;
+
+// ¿El puntero está sobre el video (y no sobre las franjas negras)?
+function onVideo(e) {
+  if (!fit) return true;
+  const r = canvas.getBoundingClientRect();
+  const y = (e.clientY - r.top) * canvas.height / r.height, x = (e.clientX - r.left) * canvas.width / r.width;
+  return y >= fit.y && y <= fit.y + fit.h && x >= fit.x && x <= fit.x + fit.w;
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!onVideo(e)) { canvas.focus(); return; }   // clic en la franja negra: no es un toque
+  canvas.setPointerCapture(e.pointerId);
+  canvas.focus();
+  t0 = performance.now();
+  path = [[...frac(e), 0]];
+  touchEl = touchAt(...evXY(e));
+  holdTimer = setTimeout(() => touchEl && touchEl.classList.add('hold'), 450);   // mantener = burbuja más sólida
+});
+canvas.addEventListener('pointermove', e => {
+  if (!path) return;
+  touchMove(touchEl, ...evXY(e));
+  const t = Math.round(performance.now() - t0);
+  if (t - path[path.length - 1][2] >= 16) path.push([...frac(e), t]);
+});
+canvas.addEventListener('pointerup', e => {
+  if (!path) return;
+  const end = [...frac(e), Math.round(performance.now() - t0)];
+  path.push(end);
+  const [x0, y0] = path[0];
+  const moved = Math.hypot(end[0] - x0, (end[1] - y0) * (fit ? fit.h / fit.w : 2));
+  if (moved < 0.02) {
+    if (end[2] >= 450) send('hold', { x: x0, y: y0, ms: end[2] });
+    else send('tap', { x: x0, y: y0 });
+  } else {
+    send('swipe', { path: downsample(path, 24) });
+  }
+  clearTimeout(holdTimer); touchEnd(touchEl); touchEl = null;
+  path = null;
+});
+canvas.addEventListener('pointercancel', () => { clearTimeout(holdTimer); touchEnd(touchEl); touchEl = null; path = null; });
+
+function downsample(p, max) {
+  if (p.length <= max) return p;
+  const out = [];
+  for (let i = 0; i < max; i++) out.push(p[Math.round(i * (p.length - 1) / (max - 1))]);
+  return out;
+}
+// ---------- burbuja de toque ----------
+function touchAt(x, y) {                       // x, y en px dentro de la pantalla
+  const t = document.createElement('div');
+  t.className = 'touch';
+  t.style.left = x + 'px'; t.style.top = y + 'px';
+  $('#overlay').appendChild(t);
+  requestAnimationFrame(() => t.classList.add('on'));
+  return t;
+}
+function touchMove(t, x, y) { if (t) { t.style.left = x + 'px'; t.style.top = y + 'px'; } }
+function touchEnd(t) {
+  if (!t) return;
+  t.classList.remove('on', 'hold'); t.classList.add('off');
+  setTimeout(() => t.remove(), 320);
+}
+const evXY = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+// fracción del VIDEO → px de pantalla (para los swipes de botón/teclado)
+function fracToXY(fx, fy) {
+  const r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+  const f = fit || { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  return [(f.x + fx * f.w) * k, (f.y + fy * f.h) * k];
+}
+// Burbuja que recorre un swipe [[fx, fy, ms], …] (botones ← ↑ ↓ → ↩ y flechas del teclado)
+function touchPath(pts) {
+  const xy = pts.map(([fx, fy]) => fracToXY(fx, fy)), dur = Math.max(180, pts[pts.length - 1][2]);
+  const t = touchAt(...xy[0]);
+  const frames = xy.map(([x, y], i) => ({ left: x + 'px', top: y + 'px', offset: pts[i][2] / pts[pts.length - 1][2] || i / (xy.length - 1) }));
+  setTimeout(() => {
+    t.animate(frames, { duration: dur, easing: 'ease-in-out', fill: 'forwards' });
+    setTimeout(() => { touchMove(t, ...xy[xy.length - 1]); touchEnd(t); }, dur);
+  }, 90);
+}
+
+// Rueda del mouse → scroll (se agrupa para no mandar 30 swipes por segundo)
+let wheelAcc = 0, wheelTimer = null, wheelAt = null;
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  wheelAcc += e.deltaY; wheelAt = frac(e);
+  clearTimeout(wheelTimer);
+  wheelTimer = setTimeout(() => {
+    const [x, y] = wheelAt, dy = Math.max(-0.35, Math.min(0.35, -wheelAcc / 1500));
+    send('swipe', { path: [[x, y, 0], [x, Math.max(0.05, Math.min(0.95, y + dy)), 250]] });
+    wheelAcc = 0;
+  }, 120);
+}, { passive: false });
+
+// ---------- teclado directo ----------
+let keyBuf = '', keyTimer = null;
+const flushKeys = () => { if (keyBuf) send('keys', { text: keyBuf }); keyBuf = ''; };
+
+// ---------- barra de teclado ----------
+// Se compara lo escrito con lo que el teléfono ya tiene y se manda sólo la diferencia:
+// letras nuevas, o retrocesos si se borró. Así sirve igual para tipear, borrar o pegar.
+let kbSent = '', kbTimer = null;
+// Por "caracteres visibles" (grafemas): un emoji cuenta como 1, no como 2-7 unidades UTF-16.
+const kbSeg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+const kbChars = t => kbSeg ? Array.from(kbSeg.segment(t), x => x.segment) : Array.from(t);
+function kbSync() {
+  const v = $('#kb').value, a = kbChars(kbSent), b = kbChars(v);
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  const del = a.length - i, add = b.slice(i).join('');
+  if (del || add) send('keys', { text: '\b'.repeat(del) + add });
+  kbSent = v;
+}
+function kbOpen() { document.body.classList.add('kb-open'); $('#kb-toggle').classList.add('on'); $('#kb').focus(); }
+function kbClose() {
+  clearTimeout(kbTimer); kbSync();
+  document.body.classList.remove('kb-open'); $('#kb-toggle').classList.remove('on');
+  $('#kb').value = ''; kbSent = '';
+}
+$('#kb-toggle').onclick = e => { e.stopPropagation(); document.body.classList.contains('kb-open') ? kbClose() : kbOpen(); };
+$('#kb-close').onclick = kbClose;
+$('#kb').addEventListener('input', () => { clearTimeout(kbTimer); kbTimer = setTimeout(kbSync, 150); });
+function kbEnter() {
+  clearTimeout(kbTimer); kbSync();
+  send('keys', { text: '\n' });
+  $('#kb').value = ''; kbSent = '';      // cada Enter empieza una línea nueva
+  $('#kb').focus();
+}
+$('#kb-enter').onclick = kbEnter;
+$('#kb').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); kbEnter(); }
+  else if (e.key === 'Escape') kbClose();
+  // Retroceso con la caja vacía: borra en el teléfono lo que ya estaba escrito antes.
+  else if (e.key === 'Backspace' && !$('#kb').value) { e.preventDefault(); send('keys', { text: '\b' }); }
+});
+
+// ---------- Home ----------
+$('#home-btn').onclick = () => send('home');
+
+// ---------- selector de apps ----------
+const swColor = b => `hsl(${[...b].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)} 45% 42%)`;
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const KILL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+const EMPTY = '<div class="sw-msg"><b>No open apps</b>Everything is closed on the phone.</div>';
+const sw = $('#switcher'), swList = $('#sw-list');
+const swOpen = () => sw.classList.contains('open');
+const swHide = () => sw.classList.remove('open');
+
+function swSetCount() {
+  const n = swList.querySelectorAll('.sw-app:not(.gone)').length;
+  $('#sw-count').textContent = n ? `${n} in memory` : ' ';
+  $('#sw-killall').disabled = !n;
+}
+// Ícono real pedido al teléfono; mientras no llega (o si falla) queda la letra de color.
+function swIconLoaded(img) { img.parentElement.querySelector('span')?.remove(); img.parentElement.style.background = 'transparent'; }
+
+async function openSwitcher(fresh = false) {
+  sw.classList.add('open');
+  $('#sw-refresh').classList.add('spin');
+  swList.innerHTML = '<div class="sw-skel"></div>'.repeat(4);
+  $('#sw-count').textContent = 'searching…'; $('#sw-killall').disabled = true;
+  try {
+    const r = await fetch(`/api/${devId}/apps${fresh ? '?fresh=1' : ''}`), data = await r.json();
+    if (r.status === 404) throw new Error('The running server is an older version: restart it (Ctrl+C, then python server.py …).');
+    if (!r.ok) throw new Error(data.error || r.status);
+    swList.innerHTML = !data.length ? EMPTY : data.map(a => `
+      <div class="sw-app" data-bundle="${esc(a.bundle)}" title="${esc(a.bundle)}">
+        <button class="sw-kill" data-kill title="Close app">${KILL_SVG}</button>
+        <div class="sw-ico" style="background:${swColor(a.bundle)}"><span>${esc((a.name || '?')[0].toUpperCase())}</span><img alt=""
+             src="/api/${devId}/icon/${encodeURIComponent(a.bundle)}" onload="swIconLoaded(this)" onerror="this.remove()"></div>
+        <div class="sw-name">${esc(a.name)}</div>
+      </div>`).join('');
+  } catch (e) {
+    swList.innerHTML = `<div class="sw-msg"><b>Couldn't read the open apps</b><small>${esc(e.message)}</small></div>`;
+  }
+  $('#sw-refresh').classList.remove('spin');
+  swSetCount();
+}
+function swKill(card) {
+  send('terminate', { bundle: card.dataset.bundle });
+  card.classList.add('gone');
+  setTimeout(() => {
+    card.remove(); swSetCount();
+    if (!swList.querySelector('.sw-app')) swList.innerHTML = EMPTY;
+  }, 220);
+}
+$('#switcher-btn').onclick = e => { e.stopPropagation(); swOpen() ? swHide() : openSwitcher(); };
+$('#sw-close').onclick = swHide;
+$('#sw-refresh').onclick = () => openSwitcher(true);
+$('#sw-killall').onclick = () =>
+  swList.querySelectorAll('.sw-app:not(.gone)').forEach((c, i) => setTimeout(() => swKill(c), i * 60));
+swList.addEventListener('click', e => {
+  const card = e.target.closest('.sw-app'); if (!card) return;
+  if (e.target.closest('[data-kill]')) return swKill(card);
+  card.classList.add('picked');
+  send('activate', { bundle: card.dataset.bundle });
+  setTimeout(swHide, 160);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && swOpen()) swHide(); });
+
+// ---------- swipes fijos (botones y flechas del teclado) ----------
+// Recorridos fijos y cortos (≤ 4 puntos) para que WDA los ejecute lo más rápido posible.
+// "up" = el dedo sube = el contenido avanza hacia abajo, como en el teléfono.
+const SWIPES = {
+  up:    [[0.5, 0.72, 0], [0.5, 0.30, 160]],
+  down:  [[0.5, 0.30, 0], [0.5, 0.72, 160]],
+  left:  [[0.85, 0.5, 0], [0.15, 0.5, 160]],
+  right: [[0.15, 0.5, 0], [0.85, 0.5, 160]],
+  back:  [[0.01, 0.5, 0], [0.70, 0.5, 220]],   // gesto de "atrás" de iOS: desde el borde
+};
+const doSwipe = dir => { send('swipe', { path: SWIPES[dir] }); touchPath(SWIPES[dir]); };
+document.querySelectorAll('[data-swipe]').forEach(b => b.onclick = () => doSwipe(b.dataset.swipe));
+// Flechas con la pantalla enfocada: ↓ avanza (dedo hacia arriba), ↑ retrocede, → siguiente, ← anterior.
+const ARROWS = { ArrowDown: 'up', ArrowUp: 'down', ArrowRight: 'left', ArrowLeft: 'right' };
+canvas.addEventListener('keydown', e => {
+  if (e.key === 'Escape') return canvas.blur();
+  if (ARROWS[e.key]) { e.preventDefault(); return doSwipe(ARROWS[e.key]); }
+  if (e.key === 'Backspace' && e.altKey) { e.preventDefault(); return doSwipe('back'); }
+  // Ctrl/Cmd = atajo del navegador (Ctrl+V pega). Pero AltGr (@ # € [ ] en teclados en
+  // español) llega como Ctrl+Alt en Windows: ésos SÍ son letras para el teléfono.
+  if ((e.ctrlKey || e.metaKey) && !e.getModifierState('AltGraph')) return;
+  let ch = null;
+  if (e.key === 'Backspace') ch = '\b';
+  else if (e.key === 'Enter') ch = '\n';
+  else if (e.key === 'Tab') ch = '\t';
+  else if (e.key.length === 1) ch = e.key;
+  if (ch === null) return;
+  e.preventDefault();
+  keyBuf += ch;
+  clearTimeout(keyTimer); keyTimer = setTimeout(flushKeys, 120);
+});
+canvas.addEventListener('paste', e => {
+  const t = e.clipboardData.getData('text'); if (t) send('keys', { text: t });
+});
+
+// ---------- botones ----------
+document.querySelectorAll('button[data-op]').forEach(b =>
+  b.onclick = () => send(b.dataset.op, b.dataset.name ? { name: b.dataset.name } : {}));
+$('#shot').onclick = async () => {
+  try {
+    const r = await fetch(`/api/${devId}/screenshot`);
+    if (!r.ok) throw new Error(r.status === 503 ? 'WDA not responding' : r.status);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = `${devId}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch (e) { logLine(`✗ screenshot: ${e.message}`); }
+};
+
+// ---------- barra izquierda: popovers y pantalla completa ----------
+document.querySelectorAll('[data-pop]').forEach(b => b.onclick = e => {
+  e.stopPropagation();
+  const pop = $('#' + b.dataset.pop), open = !pop.classList.contains('open');
+  document.querySelectorAll('.pop.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('[data-pop].on').forEach(x => x.classList.remove('on'));
+  if (open) {
+    pop.classList.add('open'); b.classList.add('on'); b.classList.remove('alert');
+    const r = b.getBoundingClientRect(), s = $('#stage').getBoundingClientRect();
+    pop.style.top = Math.max(0, r.top - s.top - 8) + 'px';
+    pop.querySelector('textarea,input,select')?.focus();
+  }
+});
+document.querySelectorAll('.pop').forEach(p => p.addEventListener('click', e => e.stopPropagation()));
+document.addEventListener('click', () => {
+  document.querySelectorAll('.pop.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('[data-pop].on').forEach(x => x.classList.remove('on'));
+});
+$('#fullscreen').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen?.();
+};
+// Quiénes están mirando: se pregunta cada 5 s.
+setInterval(async () => {
+  try {
+    const list = await (await fetch('/api/devices')).json();
+    const d = list.find(x => x.id === devId);
+    if (d) $('#viewers').textContent = d.viewers;
+  } catch {}
+}, 5000);
+$('#bundle').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.value.trim()) send('launch', { bundle: e.target.value.trim() });
+});
+
+loadDevices();
+</script>
+</body>
+</html>
