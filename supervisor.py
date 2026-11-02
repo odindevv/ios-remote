@@ -138,11 +138,13 @@ def _tidevice() -> list[str]:
 
 class Proc:
     def __init__(self, name: str, args: list[str], pre: list[str] | None = None,
-                 skip_if=None):
+                 skip_if=None, alt_args: list[str] | None = None):
         """pre: comando que se corre (y se espera) antes de CADA arranque, p. ej. montar la
         imagen de desarrollador, que se desmonta cada vez que el iPhone se reinicia."""
         self.name, self.args, self.pre = name, args, pre
         self.skip_if = skip_if   # función: True = no lanzar ahora (p. ej. WDA ya corre)
+        self.alt_args = alt_args  # plan B si el comando principal falla enseguida 2 veces
+        self.quick_fails = 0
         self.p: subprocess.Popen | None = None
         self.restarts = 0
         self.stop = threading.Event()
@@ -187,6 +189,15 @@ class Proc:
             if self.stop.is_set():
                 break
             self.restarts += 1
+            if self.p.returncode and time.time() - t0 < 20:
+                self.quick_fails += 1
+            else:
+                self.quick_fails = 0
+            if self.alt_args and self.quick_fails >= 2:
+                log.warning("%s: falla al arrancar (%s); pruebo con el otro lanzador: %s",
+                            self.name, self._last_line(), " ".join(self.alt_args))
+                self.args, self.alt_args, self.pre = self.alt_args, None, None
+                self.quick_fails, backoff = 0, 1
             backoff = 2 if time.time() - t0 > 60 else min(backoff * 2, 60)
             log.warning("%s terminó (código %s): %s — reinicio #%d en %ds",
                         self.name, self.p.returncode, self._last_line(), self.restarts, backoff)
@@ -245,7 +256,13 @@ def start_for_device(dev: dict, video_only: bool = False) -> list[Proc]:
                  pmd + ["developer", "dvt", "xcuitest", dev["bundle_id"]] + udid
                  + ["--env", "DYLD_INSERT_LIBRARIES="] + (["--userspace"] if major >= 17 else []),
                  pre=pmd + ["mounter", "auto-mount"] + udid,
-                 skip_if=lambda: wda_running_on_phone(dev.get("udid"))),
+                 skip_if=lambda: wda_running_on_phone(dev.get("udid")),
+                 # Plan B (iOS < 17): tidevice. Hay WDA instalados de forma que
+                 # pymobiledevice3 no los encuentra (p. ej. registrados con TrollStore) y
+                 # tidevice sí. En teléfonos con jailbreak tidevice tiene que estar parcheado
+                 # (parche-tidevice.py), igual que para el flujo de automatización.
+                 alt_args=(td + udid + ["xctest", "--bundle-id", dev["bundle_id"]]
+                           if major < 17 else None)),
             Proc(f"{slug}-relay-http",
                  pmd + ["usbmux", "forward", str(dev["wda_port"]), "8100"] + udid),
         ]
