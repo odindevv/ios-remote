@@ -23,6 +23,9 @@ orig = c.get(f"/session/{sid}/appium/settings").json().get("value", {})
 keep = {k: orig[k] for k in ("customSnapshotTimeout", "defaultActiveApplication",
                              "snapshotTimeout", "waitForIdleTimeout", "animationCoolOffTimeout")
         if k in orig}
+keep.setdefault("defaultActiveApplication", "com.apple.springboard")   # valor de fábrica
+keep.setdefault("waitForIdleTimeout", 10)
+keep.setdefault("animationCoolOffTimeout", 2)
 print("ajustes actuales:", keep)
 
 
@@ -80,6 +83,5 @@ try:
         timed(f"wda/tap #{i + 1}", tap)
         timed(f"actions #{i + 1}", tap_actions)
 finally:
-    if keep:
-        setting(**keep)
-        print("\najustes restaurados:", keep)
+    setting(**keep)
+    print("\najustes restaurados:", keep)
