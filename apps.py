@@ -21,6 +21,25 @@ _HIDE = ("com.apple.springboard", "WebDriverAgentRunner", "com.apple.PosterBoard
          "com.apple.InCallService", "com.apple.Spotlight", "com.apple.CarPlayTemplateUIHost")
 
 
+# Apps de jailbreak (instaladas con un .deb, p. ej. en /var/jb/Applications): el servicio de
+# instalación de iOS no las lista, así que el proceso llega sin bundle ID y antes se
+# descartaba. Se reconocen por un pedazo de su ruta (en minúsculas) → bundle ID.
+# Para agregar otras: "app_bundles": {"pedazo-de-ruta": "bundle.id"} en config.json.
+JB_APPS = {"dorito": "com.secretsauce.doritosapp"}
+
+
+def _guess_bundle(p: dict) -> tuple[str, str]:
+    path = (p.get("realAppName") or "").lower()
+    # sólo el ejecutable principal (X.app/X), no extensiones ni helpers dentro de la app
+    if ".app/" not in path or "/" in path.split(".app/", 1)[1]:
+        return "", ""
+    for frag, bundle in JB_APPS.items():
+        if frag.lower() in path:
+            app_dir = (p.get("realAppName") or "").split(".app/")[0].rsplit("/", 1)[-1]
+            return bundle, app_dir or p.get("name") or bundle
+    return "", ""
+
+
 def _installed_apps(udid: str | None) -> list:
     import tidevice
     key = udid or "-"
@@ -74,7 +93,13 @@ def running_apps(udid: str | None, ios_major: int = 0) -> list[dict]:
     out, seen = [], set()
     for p in sorted(procs, key=lambda p: -int(p.get("pid") or 0)):   # pid alto = abierta hace menos
         b = p.get("bundle_id") or ""
-        if not p.get("isApplication") or not b or b in seen or any(h in b for h in _HIDE):
+        if b and not p.get("isApplication"):
+            continue
+        if not b:
+            b, guessed_name = _guess_bundle(p)
+            if b:
+                p["display_name"] = p.get("display_name") or guessed_name
+        if not b or b in seen or any(h in b for h in _HIDE):
             continue
         if "hidden" in (by_bundle.get(b, {}).get("SBAppTags") or []):
             continue

@@ -428,7 +428,8 @@ async def open_apps(dev_id: str, request: Request):
     if not _authorized(request.cookies.get("tok")):
         raise HTTPException(401)
     d = DEVICES.get(dev_id) or _404()
-    from apps import running_apps
+    from apps import running_apps, JB_APPS
+    JB_APPS.update(CFG.get("app_bundles") or {})
     from mjpeg import in_daemon_thread
     from supervisor import ios_major
     major = ios_major(d.cfg)
