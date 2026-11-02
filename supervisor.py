@@ -108,16 +108,41 @@ def ios_major(dev: dict) -> int:
         return 0
 
 
+def wda_running_on_phone(udid: str | None) -> bool:
+    """¿Ya hay un WDA respondiendo DENTRO del teléfono (puerto 8100)? Pasa cuando otro
+    programa lo mantiene vivo (el vigía, TrollStore, otra PC). En ese caso NO hay que
+    lanzar xcuitest: el intento mata al WDA que ya corre (se va el video ~10 s y se corta
+    la sesión del otro programa) y además falla con código 1."""
+    if not udid:
+        return False
+    sock = None
+    try:
+        from mjpeg import _usb_socket
+        sock, _keep = _usb_socket(udid, 8100)
+        sock.settimeout(3)
+        sock.sendall(b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        return sock.recv(64).startswith(b"HTTP/1.1 200")
+    except Exception:
+        return False
+    finally:
+        try:
+            sock and sock.close()
+        except Exception:
+            pass
+
+
 def _tidevice() -> list[str]:
     exe = shutil.which("tidevice")
     return [exe] if exe else [sys.executable, "-m", "tidevice"]
 
 
 class Proc:
-    def __init__(self, name: str, args: list[str], pre: list[str] | None = None):
+    def __init__(self, name: str, args: list[str], pre: list[str] | None = None,
+                 skip_if=None):
         """pre: comando que se corre (y se espera) antes de CADA arranque, p. ej. montar la
         imagen de desarrollador, que se desmonta cada vez que el iPhone se reinicia."""
         self.name, self.args, self.pre = name, args, pre
+        self.skip_if = skip_if   # función: True = no lanzar ahora (p. ej. WDA ya corre)
         self.p: subprocess.Popen | None = None
         self.restarts = 0
         self.stop = threading.Event()
@@ -129,7 +154,23 @@ class Proc:
     def _loop(self):
         LOGDIR.mkdir(exist_ok=True)
         backoff = 2
+        skipping = False
         while not self.stop.is_set():
+            if self.skip_if:
+                try:
+                    skip = self.skip_if()
+                except Exception:
+                    skip = False
+                if skip:
+                    if not skipping:
+                        log.info("%s: WDA ya está corriendo en el teléfono (lo mantiene otro "
+                                 "programa); uso ese y no lo lanzo", self.name)
+                    skipping = True
+                    self.stop.wait(15)
+                    continue
+                if skipping:
+                    log.info("%s: el WDA de afuera ya no responde; lo lanzo yo", self.name)
+                skipping = False
             with open(LOGDIR / f"{self.name}.log", "ab") as out:
                 flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                 if self.pre:
@@ -203,13 +244,15 @@ def start_for_device(dev: dict, video_only: bool = False) -> list[Proc]:
             Proc(f"{slug}-xctest",
                  pmd + ["developer", "dvt", "xcuitest", dev["bundle_id"]] + udid
                  + ["--env", "DYLD_INSERT_LIBRARIES="] + (["--userspace"] if major >= 17 else []),
-                 pre=pmd + ["mounter", "auto-mount"] + udid),
+                 pre=pmd + ["mounter", "auto-mount"] + udid,
+                 skip_if=lambda: wda_running_on_phone(dev.get("udid"))),
             Proc(f"{slug}-relay-http",
                  pmd + ["usbmux", "forward", str(dev["wda_port"]), "8100"] + udid),
         ]
     else:
         procs = [
-            Proc(f"{slug}-xctest", td + udid + ["xctest", "--bundle-id", dev["bundle_id"]]),
+            Proc(f"{slug}-xctest", td + udid + ["xctest", "--bundle-id", dev["bundle_id"]],
+                 skip_if=lambda: wda_running_on_phone(dev.get("udid"))),
             Proc(f"{slug}-relay-http", td + udid + ["relay", str(dev["wda_port"]), "8100"]),
         ]
     log.info("teléfono %s: WDA se lanza con %s%s", slug, launcher,

@@ -93,7 +93,7 @@ class MjpegHub:
             except Exception as e:  # relay caído, WDA reiniciando, etc.
                 log.warning("mjpeg %s:%s: %s (reintento en %.0fs)", self.host, self.port, e, backoff)
             await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 10)
+            backoff = min(backoff * 2, 3)
 
     async def _read_stream(self):
         keep = None
