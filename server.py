@@ -308,6 +308,13 @@ async def start_phone(udid: str, request: Request):
     if not f or not f.get("startable"):
         raise HTTPException(409, (f or {}).get("status") or "phone not found")
     cfg = _auto_cfg(f)
+    from supervisor import wda_running_on_phone
+    if await asyncio.to_thread(wda_running_on_phone, udid):
+        # Otro programa (p. ej. una automatización) ya usa el WDA de este teléfono: el panel
+        # lo comparte. No se lanza otro WDA, no se cambian sus ajustes globales (esperas,
+        # video) y se usa su sesión abierta, así no se le corta nada a ese programa.
+        cfg["share_session"] = True
+        log.info("Start: %s ya tiene WDA corriendo (lo usa otro programa) → modo compartido", udid)
     d = Device(cfg)
     d.connected = True
     d.started_at = time.time()
