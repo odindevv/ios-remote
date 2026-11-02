@@ -529,6 +529,13 @@ async def run_cmd(d: Device, m: dict):
         return await w.activate(m["bundle"])
     if op == "terminate":
         return await w.terminate(m["bundle"])
+    if op == "relaunch":   # cerrar y volver a abrir (sirve también para apps que no salen en ⧉)
+        try:
+            await w.terminate(m["bundle"])
+        except WDAError:
+            pass   # no estaba abierta: igual se abre
+        await asyncio.sleep(0.5)
+        return await w.launch(m["bundle"])
     if op == "launch":
         return await w.launch(m["bundle"])
     if op == "size":

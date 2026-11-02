@@ -75,6 +75,9 @@
   .pop select, .pop input, .pop textarea { font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
   .pop textarea { resize: vertical; min-height: 70px; }
+  .pop button[type=button] { font: inherit; font-size: 13px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+  .pop button[type=button]:hover { border-color: var(--accent, #8b7cf6); }
   .hint { font-size: 11px; color: var(--muted); margin: 6px 0 0; }
   kbd { font: 10px "IBM Plex Mono", monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
   #log { font: 11px "IBM Plex Mono", monospace; color: var(--muted); white-space: pre-wrap;
@@ -207,11 +210,15 @@
   <div class="pop" id="pop-app">
     <h2>Open app</h2>
     <input id="bundle" placeholder="com.burbn.instagram" list="bundles">
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button type="button" id="app-open" style="flex:1">Open</button>
+      <button type="button" id="app-relaunch" style="flex:1" title="Close it and open it again">Relaunch</button>
+    </div>
     <datalist id="bundles">
-      <option value="com.burbn.instagram"><option value="com.apple.Preferences">
+      <option value="com.burbn.instagram"><option value="com.secretsauce.doritosapp"><option value="com.apple.Preferences">
       <option value="com.apple.mobilesafari"><option value="com.apple.mobileslideshow">
     </datalist>
-    <p class="hint">Type the bundle ID and press Enter.</p>
+    <p class="hint">Type the bundle ID. Enter = Open.</p>
   </div>
   <div class="pop" id="pop-log">
     <h2>Log</h2>
@@ -323,7 +330,7 @@ function connect(id) {
     const p = pending.get(m.id); pending.delete(m.id);
     // Nombre corto del comando: así se ve que "home 25 ms" y "toque 874 ms" son cosas distintas.
     const OPN = { tap: 'tap', hold: 'hold', swipe: 'swipe', keys: 'text', home: 'home', button: 'button',
-                  lock: 'lock', rotate: 'rotate', launch: 'open', activate: 'switch', terminate: 'close' };
+                  lock: 'lock', rotate: 'rotate', launch: 'open', relaunch: 'relaunch', activate: 'switch', terminate: 'close' };
     $('#lat-op').textContent = OPN[p] || p || 'last';
     $('#lat').textContent = m.ms;
     if (!m.ok) logLine(`✗ ${p || '?'}: ${m.err}`);
@@ -669,6 +676,8 @@ setInterval(async () => {
 $('#bundle').addEventListener('keydown', e => {
   if (e.key === 'Enter' && e.target.value.trim()) send('launch', { bundle: e.target.value.trim() });
 });
+$('#app-open').onclick = () => { const b = $('#bundle').value.trim(); if (b) send('launch', { bundle: b }); };
+$('#app-relaunch').onclick = () => { const b = $('#bundle').value.trim(); if (b) send('relaunch', { bundle: b }); };
 
 loadDevices();
 </script>
